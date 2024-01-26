@@ -15,7 +15,7 @@ def json_creation_transaction(rows):
 
     for TX in rows: 
         
-        if TX[7] =="Tx Exitosa":    
+        if TX[7] =="Tx Exitosa" or TX[7] == "Reembolso Exitoso":    
             properties = {
 
                 "$type" : "$transaction", 
@@ -56,7 +56,9 @@ def json_creation_transaction(rows):
                 "$currency_code"    : TX[3],
 
                 "$user_email"                : TX[5].lower(),
-                "$decline_category"          : decline_category(TX[13]),
+                "$decline_category"          : decline_category(TX[13], 
+                                                                TX[15]=="Transacción rechazada - Tarjeta o cuenta de usuario bloqueada",
+                                                                "duplicada" in TX[15]), 
                 "$order_id"                  : str(TX[0]),
                 "$transaction_id"            : str(TX[0]),
                 "$transaction_type"            : get_transaction_type(TX[7]),
@@ -79,9 +81,8 @@ def json_creation_transaction(rows):
             }
         print("")
         print(properties)
-        #send(data = properties)
-        #response = client.track("$transaction", properties)
-        
+        send(data = properties)
+        #response = client.track("$transaction", properties)        
     
 def json_creation_create_order(rows): 
     
@@ -142,7 +143,12 @@ def get_card_info(n, bin):
         result += n[-1] 
     return result
 
-def decline_category(respuesta_bluesnap_str):
+def decline_category(respuesta_bluesnap_str, blacklist, duplicated):
+    if blacklist:
+        return "$risky"
+    
+    if duplicated: 
+        return "$other"
     
     respuesta_bluesnap = json.loads(respuesta_bluesnap_str)   
     code = respuesta_bluesnap["message"][0]["errorName"]
@@ -228,6 +234,7 @@ def decline_category(respuesta_bluesnap_str):
     ],
 
     "$other": [
+        "DO_NOT_HONOR",
         "INVALID_TRANSACTION_TYPE",
         "INVALID_HTTP_METHOD",
         "PAYMENT_GENERAL_FAILURE",
@@ -344,14 +351,13 @@ def decline_category(respuesta_bluesnap_str):
     "$risky": [
         "XSS_EXCEPTION",
         "ACCOUNT_CLOSED",
-        "DO_NOT_HONOR",
         "HIGH_RISK_ERROR",
         "SHOPPER_COUNTRY_OFAC_SANCTIONED"
     ],
 
 
     
-}
+    }
     final_sift_category = code
     for sift_category, bluesnap_categories in decline_category_dict.items():
         if code in bluesnap_categories:
@@ -365,8 +371,13 @@ def get_status(estatus):
     match estatus: 
         case "Tx Exitosa":
             return "$success"
+        
+        case "Reembolso Exitoso": 
+            return "$success"
+        
         case "Tx Fallida":
             return "$failure"
+        
         case _: 
             return "$pending"
 
@@ -388,7 +399,6 @@ def main():
         password = 'XFZkwnk7JGHhjW')
     
 
-
     cursor = connection.cursor()
 
     query = """
@@ -407,7 +417,8 @@ def main():
         tp.nombre as "Tipo Pago",                               -- 11
         p.codigo_iso3166 as "Codigo Pais",                      -- 12
         t.respuesta_bluesnap as "Respuesta Bluesnap",           -- 13
-        m.id as "ID Marca"                                      -- 14
+        m.id as "ID Marca",                                     -- 14
+        t.descripcion as Descripcion                            -- 15
         from transaccion t
         inner join servicio s on s.id=t.id_servicio
         inner join estatus e on e.id=t.id_estatus
@@ -419,9 +430,9 @@ def main():
         inner join tipo_pago tp on tp.id=t.id_tipo_pago
         where t.id_merchant=1  
         and t.id_estatus in (6,7,18)                          
-        and t.fecha_creacion at time zone 'vet' between '2023-01-01 00:00:00' and '2023-12-31 23:59:59'
+        and t.fecha_creacion at time zone 'vet' between '2023-07-01 00:00:00' and '2023-07-31 23:59:59'
+        and t.id not in (1135408,1135409,1135410,1135412,1135413)
         order by 1
-        limit 5
     """
 
     cursor.execute(query)
@@ -431,7 +442,7 @@ def main():
     for x in range(0,len(rows[0])): 
         print(f"{x} -- {rows[0][x]}")
 
-    #json_creation_transaction(rows)
+    json_creation_transaction(rows)
 
     #json_creation_create_order(rows)
 
