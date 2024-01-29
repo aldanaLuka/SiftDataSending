@@ -81,7 +81,7 @@ def json_creation_transaction(rows):
             }
         print("")
         print(properties)
-        send(data = properties)
+        #send(data = properties)
         #response = client.track("$transaction", properties)        
     
 def json_creation_create_order(rows): 
