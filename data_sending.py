@@ -10,79 +10,38 @@ def send(api_url = "https://api.sift.com/v205/events", data={}):
     response.json()
     print(response)
     
-
-def json_creation_transaction(rows):
-
-    for TX in rows: 
-        
-        if TX[7] =="Tx Exitosa" or TX[7] == "Reembolso Exitoso":    
-            properties = {
-
-                "$type" : "$transaction", 
-                "$api_key" : "6a60d865d2af9bde", 
-                "$user_id"          : TX[5].lower(),
-                "$amount"           : int(float(TX[4])*1000000), 
-                "$currency_code"    : TX[3],
-
-                "$user_email"                : TX[5].lower(),
-                "$order_id"                  : str(TX[0]),
-                "$transaction_id"            : str(TX[0]),
-                "$transaction_type"          : get_transaction_type(TX[7]),
-                "$transaction_status" : get_status(TX[7]),
-                "$ip" : TX[1],
-                "$time" : int(TX[2].timestamp()), 
-
-                "$payment_method"   : {
-                    "$payment_type"    : "$credit_card",  #11
-                    "$payment_gateway" : "$bluesnap", #9
-                    "$account_holder_name" : TX[6],
-                    "$card_bin"        : get_card_info(TX[10], True),
-                    "$card_last4"      : get_card_info(TX[10], False),
-                    },
-                
-                "$merchant_profile" : {
-                    "$merchant_id": str(TX[14]),
-                    "$merchant_name": TX[8]
-                }
-            }
+def transaction(TX):
+    properties = {
+            "$type" : "$transaction", 
+            "$api_key" : "6a60d865d2af9bde", 
+            "$user_id"          : TX[5].lower().strip(),
+            "$amount"           : int(float(TX[4])*1000000), 
+            "$currency_code"    : TX[3],
+            "$user_email"                : TX[5].lower().strip(),
+            "$decline_category"          : decline_category(TX[13], 
+                                                            TX[15]=="Transacción rechazada - Tarjeta o cuenta de usuario bloqueada",
+                                                            "duplicada" in TX[15], TX[13] != None and "AUTH_CAPTURE" in TX[13]), 
+            "$order_id"                  : str(TX[0]),
+            "$transaction_id"            : str(TX[0]),
+            "$transaction_type"            : get_transaction_type(TX[7]),
+            "$transaction_status" : get_status(TX[7]),
+            "$ip" : TX[1],
+            "$time" : int(TX[2].timestamp()), 
             
-        else: 
+            "$payment_method"   : {
+                "$payment_type"    : "$credit_card", 
+                "$payment_gateway" : "$bluesnap",
+                "$account_holder_name" : TX[6],
+                #"$card_bin"        : get_card_info(TX[10], True),
+                "$card_last4"      : get_card_info(TX[10], False),
+                },
             
-            properties = {
-                "$type" : "$transaction", 
-                "$api_key" : "6a60d865d2af9bde", #***************
-                "$user_id"          : TX[5].lower(),
-                "$amount"           : int(float(TX[4])*1000000), 
-                "$currency_code"    : TX[3],
-
-                "$user_email"                : TX[5].lower(),
-                "$decline_category"          : decline_category(TX[13], 
-                                                                TX[15]=="Transacción rechazada - Tarjeta o cuenta de usuario bloqueada",
-                                                                "duplicada" in TX[15]), 
-                "$order_id"                  : str(TX[0]),
-                "$transaction_id"            : str(TX[0]),
-                "$transaction_type"            : get_transaction_type(TX[7]),
-                "$transaction_status" : get_status(TX[7]),
-                "$ip" : TX[1],
-                "$time" : int(TX[2].timestamp()), 
-
-                "$payment_method"   : {
-                    "$payment_type"    : "$credit_card", 
-                    "$payment_gateway" : "$bluesnap",
-                    "$account_holder_name" : TX[6],
-                    #"$card_bin"        : get_card_info(TX[10], True),
-                    "$card_last4"      : get_card_info(TX[10], False),
-                    },
-                
-                "$merchant_profile" : {
-                    "$merchant_id": str(TX[14]),
-                    "$merchant_name": TX[8]
-                }
+            "$merchant_profile" : {
+                "$merchant_id": str(TX[14]),
+                "$merchant_name": TX[8]
             }
-        print("")
-        print(properties)
-        #send(data = properties)
-        #response = client.track("$transaction", properties)        
+        }
+    return properties
     
 def json_creation_create_order(rows): 
     
@@ -92,11 +51,11 @@ def json_creation_create_order(rows):
 
             "$type" : "$create_order", 
             "$api_key" : "6a60d865d2af9bde", 
-            "$user_id"          : TX[5].lower(),
+            "$user_id"          : TX[5].lower().strip(),
             "$amount"           : int(float(TX[4])*1000000), 
             "$currency_code"    : TX[3],
     
-            "$user_email"                : TX[5].lower(),
+            "$user_email"                : TX[5].lower().strip(),
             "$order_id"                  : str(TX[0]),
             "$ip" : TX[1],
             "$time" : TX[2].timestamp(), 
@@ -143,12 +102,16 @@ def get_card_info(n, bin):
         result += n[-1] 
     return result
 
-def decline_category(respuesta_bluesnap_str, blacklist, duplicated):
+def decline_category(respuesta_bluesnap_str, blacklist, duplicated, successful):
+
     if blacklist:
         return "$risky"
     
     if duplicated: 
         return "$other"
+    
+    if successful:
+        return None
     
     respuesta_bluesnap = json.loads(respuesta_bluesnap_str)   
     code = respuesta_bluesnap["message"][0]["errorName"]
@@ -381,9 +344,8 @@ def get_status(estatus):
         case _: 
             return "$pending"
 
-
-def main(): 
-
+def connect(): 
+    
     #connection = psycopg2.connect(
     #    host='fw.payco.net.ve', 
     #    database='luka_calidad', 
@@ -398,9 +360,9 @@ def main():
         user = 'rmadonna',
         password = 'XFZkwnk7JGHhjW')
     
+    return connection
 
-    cursor = connection.cursor()
-
+def get_query(): 
     query = """
         select distinct 
         t.id as "Id",                                           -- 0
@@ -433,18 +395,37 @@ def main():
         and t.fecha_creacion at time zone 'vet' between '2023-07-01 00:00:00' and '2023-07-31 23:59:59'
         and t.id not in (1135408,1135409,1135410,1135412,1135413)
         order by 1
+        -- limit 50
     """
+    return query 
+    
+def main(): 
+
+    connection = connect()
+    
+    cursor = connection.cursor()
+
+    query = get_query()    
 
     cursor.execute(query)
+    
     rows = cursor.fetchall()
+    
+    for TX in rows: 
 
-    print(rows[0])
-    for x in range(0,len(rows[0])): 
-        print(f"{x} -- {rows[0][x]}")
+        transaction_json = transaction(TX)
+        
+        if TX[7] =="Tx Exitosa" or TX[7] == "Reembolso Exitoso":  
+            del transaction_json["$decline_category"]
+            
+        if str(TX[8]) == "Ridery":
+            del transaction_json["$ip"]
+            
+        print(transaction_json)
+        print("")
+        
+        #send(data = transaction_json)
 
-    json_creation_transaction(rows)
-
-    #json_creation_create_order(rows)
 
 
 main()
