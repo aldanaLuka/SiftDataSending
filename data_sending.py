@@ -1,9 +1,6 @@
 import psycopg2
 import json
 import requests
-#import sift
-
-#client = sift.Client(api_key='{6a60d865d2af9bde}', account_id='{6581f47eae2429766a707d53}')  
 
 def send(api_url = "https://api.sift.com/v205/events", data={}):
     response = requests.post(api_url, json=data)
