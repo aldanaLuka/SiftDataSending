@@ -1,6 +1,7 @@
 import psycopg2
 import json
 import requests
+import smtplib
 
 def send(api_url = "https://api.sift.com/v205/events", data={}):
     response = requests.post(api_url, json=data)
@@ -392,7 +393,7 @@ def get_query():
         and t.fecha_creacion at time zone 'vet' between '2023-07-01 00:00:00' and '2023-07-31 23:59:59'
         and t.id not in (1135408,1135409,1135410,1135412,1135413)
         order by 1
-        -- limit 50
+        limit 5
     """
     return query 
     
@@ -408,20 +409,35 @@ def main():
     
     rows = cursor.fetchall()
     
-    for TX in rows: 
+    try:
+    
+        for TX in rows: 
 
-        transaction_json = transaction(TX)
-        
-        if TX[7] =="Tx Exitosa" or TX[7] == "Reembolso Exitoso":  
-            del transaction_json["$decline_category"]
-            
-        if str(TX[8]) == "Ridery":
-            del transaction_json["$ip"]
-            
-        print(transaction_json)
-        print("")
-        
-        #send(data = transaction_json)
+            transaction_json = transaction(TX)
+
+            if TX[85] =="Tx Exitosa" or TX[7] == "Reembolso Exitoso":  
+                del transaction_json["$decline_category"]
+
+            if str(TX[8]) == "Ridery":
+                del transaction_json["$ip"]
+
+            print(transaction_json)
+            print("")
+
+            #send(data = transaction_json)
+    except:
+        s = smtplib.SMTP('smtp.gmail.com', 587)
+
+        s.starttls()
+
+        s.login("dario.aldana@correo.unimet.edu.ve", "20paCarupano")
+
+        message = "I'm testing smth"
+
+        s.sendmail("dario.aldana@correo.unimet.edu.ve", "dario.aldana@correo.unimet.edu.ve", message)
+
+        s.quit()
+
 
 
 main()
